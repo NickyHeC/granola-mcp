@@ -1,358 +1,280 @@
-# mcp-template
+# granola-mcp
 
-A starter template for building MCP (Model Context Protocol) servers with the [dedalus_mcp](https://docs.dedaluslabs.ai/dmcp) framework. Authentication is handled by **DAuth** (Dedalus Auth).
+A [Granola](https://granola.ai) meeting notes MCP server built on the [Dedalus](https://dedaluslabs.ai) platform.
 
-This template supports three auth frameworks — **No Auth**, **API Key**, and **OAuth**. Each has its own `src-*` folder with a complete, ready-to-run server. You can either use the **CLI** to scaffold a new project automatically, or **clone this repo** and rename a folder manually.
+Search through meeting history, retrieve meeting notes and transcripts, and extract business insights — all through AI assistants using the Model Context Protocol.
 
----
+## Prerequisites
 
-## What is DAuth?
-
-[DAuth](https://www.dedaluslabs.ai/blog/dedalus-auth-launch) is a multi-tenant authentication layer for MCP servers built by Dedalus Labs. It solves a core problem in the MCP ecosystem: most servers require API keys or tokens, but the MCP spec doesn't define how non-OAuth credentials should be handled securely. Without DAuth, developers either build their own auth infrastructure or pass raw secrets around — both are bad options.
-
-DAuth is **zero-trust** and **host-blind** — Dedalus never sees your raw API keys. Here's how it works:
-
-1. The SDK **encrypts credentials client-side** before they leave your device.
-2. When a request reaches your MCP server, it acts as a standard **OAuth 2.1 Resource Server** — access is verified without touching the credential.
-3. Authenticated requests are forwarded to **the Enclave**, a network-isolated, hardware-secured execution environment written in Rust.
-4. Inside the Enclave, the credential is **decrypted for milliseconds**, used to call the external API, then **zeroed from memory**.
-5. Only the API **response** is returned — the raw secret is never exposed to your server code, to Dedalus, or to the network.
-
-This means your MCP server only holds an opaque connection handle, never a raw key. DAuth is built into the `dedalus_mcp` SDK and works across all auth types (Bearer tokens, API keys, OAuth, etc.).
+- Python 3.11+
+- [`uv`](https://docs.astral.sh/uv/)
+- A [Granola](https://granola.ai) account with Business or Enterprise plan
+- A Granola Personal API key
+- A [Dedalus](https://dedaluslabs.ai) account
 
 ---
 
 ## Quick Start
 
-### Option A: CLI (recommended)
+### 1. Create a Granola API Key
 
-Scaffold a new project with one command. The CLI prompts for your project name, auth type, and package manager, then generates a ready-to-run project with dependencies installed.
+1. Open the **Granola desktop app**.
+2. Go to **Settings → API**.
+3. Click **Create new key**.
+4. Copy the key (it starts with `grn_`).
 
-```bash
-npx create-dmcp
-```
+> **Note:** Personal API keys require a Granola Business or Enterprise plan.
 
-Or pass the project name directly:
-
-```bash
-npx create-dmcp my-mcp-server
-```
-
-Requires Node.js >= 18. The generated project is pure Python.
-
-### Option B: Clone and rename
-
-Clone this repo and rename the `src-*` folder that matches your auth type:
-
-```bash
-git clone https://github.com/NickyHeC/mcp-template.git my-mcp-server
-cd my-mcp-server
-mv src-api-key src
-rm -rf src-no-auth src-oauth
-pip install -e .
-```
-
----
-
-## Project Structure
-
-```
-project-root/
-├── cli/                     # CLI scaffolding tool (npx create-dmcp)
-│   └── index.ts
-├── src-no-auth/             # No Auth — self-contained tools, no credentials
-│   ├── main.py
-│   ├── tools.py
-│   └── client.py
-├── src-api-key/             # API Key — static credential via DAuth
-│   ├── main.py
-│   ├── tools.py
-│   └── client.py
-├── src-oauth/               # OAuth — browser-based auth via DAuth
-│   ├── main.py
-│   ├── tools.py
-│   └── client.py
-├── pyproject.toml           # Python dependencies and build config
-├── package.json             # Node.js config for the CLI
-├── tsconfig.json            # TypeScript config for the CLI
-├── .env.example             # Environment variable reference (per auth type)
-├── PROJECT.md               # Platform research notepad (for you / your AI agent)
-├── LICENSE
-└── README.md
-```
-
-Each `src-*` folder is a complete, self-contained server. If using the **CLI**, it copies the right template into `<project>/src/` automatically. If **cloning manually**, rename the folder you want:
-
-```bash
-mv src-api-key src           # rename your chosen template to src/
-```
-
-The server code expects to live in a folder called `src/` — all internal imports use `from src.tools import ...` and `from src.main import ...`. After renaming (or CLI scaffolding), the server is ready to configure and run.
-
----
-
-## Choose Your Auth Framework
-
-Pick the framework that matches your target platform's authentication method.
-
-| Framework | When to use | Folder |
-|-----------|-------------|--------|
-| **No Auth** | Tools that don't call external APIs — calculators, formatters, local utilities | `src-no-auth/` |
-| **API Key** | Platforms that use static credentials — API keys, personal access tokens, bot tokens (e.g. GitHub, Slack, Discord) | `src-api-key/` |
-| **OAuth** | Platforms that require browser-based user authorization — OAuth 2.0 flows (e.g. Gmail, Linear, Spotify, Google Calendar) | `src-oauth/` |
-
-### No Auth
-
-Use when your tools are self-contained and don't need to call any external API.
-
-- No `Connection` object needed
-- No DAuth configuration
-- No environment variables beyond basic server settings
-- Tools are simple decorated functions
-
-```python
-from dedalus_mcp import MCPServer, tool
-
-@tool(description="Add two numbers")
-def add(a: float, b: float) -> float:
-    return a + b
-
-server = MCPServer("my-mcp")
-server.collect(add)
-```
-
-**To use:** `mv src-no-auth src`
-
-### API Key
-
-Use when the platform authenticates with a static credential that the user provides once (API key, personal access token, bot token, etc.).
-
-- `Connection` + `SecretKeys` declares the credential name
-- DAuth encrypts and manages the credential in its enclave
-- Tools can use `ctx.dispatch()` for authenticated requests, or call APIs directly
-- Environment variables: `DEDALUS_AS_URL`, your platform's token
-
-```python
-from dedalus_mcp.auth import Connection, SecretKeys
-
-platform_connection = Connection(
-    name="github",
-    secrets=SecretKeys(token="GITHUB_TOKEN"),
-    base_url="https://api.github.com",
-    auth_header_format="token {api_key}",
-)
-```
-
-**To use:** `mv src-api-key src`
-
-### OAuth
-
-Use when the platform requires a browser-based OAuth flow where users authorize your application to act on their behalf.
-
-- `Connection` + `SecretKeys` declares the token name (same as API Key from code perspective)
-- The Dedalus platform handles the full OAuth token exchange externally
-- OAuth configuration (client ID, client secret, authorize/token URLs, scopes) is set via environment variables
-- **Important:** OAuth environment variables must be baked into the server when deploying to ensure the connection works
-- Tools use `ctx.dispatch()` for authenticated requests through the DAuth enclave
-
-```python
-from dedalus_mcp.auth import Connection, SecretKeys
-
-platform_connection = Connection(
-    name="linear-mcp",
-    secrets=SecretKeys(token="LINEAR_ACCESS_TOKEN"),
-    base_url="https://api.linear.app",
-    auth_header_format="Bearer {api_key}",
-)
-```
-
-> **Note on OAuth with DAuth:** Your Python server code looks nearly identical to the API Key template. The difference is that the Dedalus platform reads the `OAUTH_*` environment variables to orchestrate the browser-based OAuth flow and token refresh. Your server code never manages OAuth tokens directly — it just calls `ctx.dispatch()` and DAuth applies the token inside the enclave.
-
-**To use:** `mv src-oauth src`
-
----
-
-## How to Build an MCP Server from This Template
-
-> If you used the CLI (`npx create-dmcp`), steps 2 is already done — the CLI chose the template, renamed it to `src/`, and installed dependencies. You still need to fill in `.env` (step 3) and configure the server (step 4).
-
-### 1. Research the Target Platform API
-
-Read the API docs for the platform you want to integrate. Note:
-
-- Available endpoints and features
-- Authentication method (Bearer token, API key, OAuth, etc.)
-- Rate limits and restrictions
-- Response formats
-
-Save your notes in `PROJECT.md` — it serves as context for you and for AI coding agents in later steps. The file is pre-formatted with sections for all the information you'll need.
-
-**Tip:** Once your `PROJECT.md` is filled in, you can hand the project off to an AI coding agent with a prompt like: *"Build my MCP server based on this template and the notes in PROJECT.md."* The agent can read the template files, your research notes, and this README to implement the full server with minimal back-and-forth.
-
-### 2. Choose an Auth Framework and Rename the Folder
-
-*Skip this step if you used the CLI — it already did this for you.*
-
-Based on your research, pick the right auth framework from the table above. Rename the chosen folder to `src/` and remove the others:
-
-```bash
-# Example: using the OAuth template
-mv src-oauth src
-rm -rf src-no-auth src-api-key
-```
-
-### 3. Set Up Environment Variables
-
-*Skip `cp` if you used the CLI — `.env.example` is already in your project.*
+### 2. Configure Environment Variables
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in only the variables for your chosen auth framework. See `.env.example` for which variables belong to which framework.
+Fill in your `.env`:
 
-- **No Auth:** No environment variables needed.
-- **API Key:** Set `DEDALUS_AS_URL` and your platform's token (e.g. `GITHUB_TOKEN`).
-- **OAuth:** Set `DEDALUS_AS_URL`, `DEDALUS_API_KEY`, and all `OAUTH_*` variables. These must also be configured in the deployment environment.
+```env
+# Granola API Key
+GRANOLA_API_KEY=grn_your-api-key-here
 
-### 4. Configure the Server (`src/main.py`)
+# Dedalus Platform (for the sample client)
+DEDALUS_API_KEY=dsk-live-your-api-key
+DEDALUS_API_URL=https://api.dedaluslabs.ai
+DEDALUS_AS_URL=https://as.dedaluslabs.ai
 
-Customize `main.py` with your platform's details:
-
-1. **Connection name** — Change `"platform"` to your platform's identifier (e.g. `"github"`, `"linear"`, `"spotify"`).
-2. **Secret key** — Update `SecretKeys(token="...")` to match your credential name. The API Key template uses `"API_TOKEN"`; the OAuth template uses `"ACCESS_TOKEN"`. Rename to match your platform (e.g. `"GITHUB_TOKEN"`, `"LINEAR_ACCESS_TOKEN"`).
-3. **Base URL** — Set to the platform's API root (e.g. `"https://api.github.com"`).
-4. **Auth header format** — Set how the credential is attached. Common formats: `"Bearer {api_key}"`, `"token {api_key}"`, `"Bot {api_key}"`.
-5. **Server name** — Change `"my-mcp"` to something descriptive (e.g. `"github-mcp"`). The CLI does this automatically.
-
-### 5. Implement Tools (`src/tools.py`)
-
-Define the tools your server will expose:
-
-1. **Result models** — Create Pydantic `BaseModel` subclasses for structured return values.
-2. **Request helper** — For API Key and OAuth templates, use the `api_request()` helper (which wraps `ctx.dispatch()`) to make authenticated calls through DAuth.
-3. **Tool functions** — Decorate functions with `@tool(description="...")`. Use type hints for parameters and return a Pydantic model.
-4. **Tool registry** — Add every tool to the `tools` list at the bottom of the file.
-
-The template files include example tools demonstrating each pattern.
-
-### 6. Test Locally
-
-Install dependencies:
-
-```bash
-pip install -e .
+# After deploying, set this to your slug
+GRANOLA_MCP_SLUG=nickyhec/granola-mcp
 ```
 
-**Test your connection first** (API Key and OAuth only). Before starting the server, verify that your `Connection` config and credentials actually work:
+### 3. Deploy to Dedalus
+
+1. Log in to the [Dedalus Dashboard](https://dedaluslabs.ai).
+2. Go to **Add Server** and connect this GitHub repository.
+3. In the server configuration, enter the `GRANOLA_API_KEY` from your `.env`.
+4. Deploy. The dashboard will show your server slug (e.g. `nickyhec/granola-mcp`).
+
+### 4. Install Dependencies
 
 ```bash
-python -m src.client --test-connection
+uv sync
 ```
 
-This uses `ConnectionTester` from `dedalus_mcp.testing` to make a real API call to your target platform — no running server needed. Edit the test path in `client.py` to match a lightweight endpoint from your platform (e.g. `/user` for GitHub, `/v1/me` for Spotify). If it prints `OK`, your connection is good.
-
-> **OAuth note:** For local testing you need a valid access token in `.env`. Obtain one from the platform's OAuth playground or developer console. When deployed on Dedalus, DAuth handles the full OAuth flow automatically.
-
-**Then start the server and test tools:**
+### 5. Run the Client
 
 ```bash
-python -m src.main
+uv run src/_client.py
 ```
 
-The server starts on port 8080. Use the client to verify your tools:
-
-```bash
-python -m src.client
 ```
+=== Granola MCP Agent ===
+Server: nickyhec/granola-mcp
+Type 'quit' or 'exit' to end the session.
 
-Update `src/client.py` to call your tools by name with the correct arguments.
-
-### 7. Document Your Project
-
-Update this README with:
-
-- What your server does
-- Available tools and their parameters
-- Configuration and environment variables
-- Usage examples
-
-### 8. Clean Up Template Scaffolding
-
-Once your server is built and working, remove leftover template files so the repo only contains your project code. If you're using an AI coding agent, ask it to perform this cleanup as a final step.
-
-**Files to remove:**
-- `PROJECT.md` — your research notes; no longer needed in the final repo
-- Any remaining `src-*` folders (e.g. `src-no-auth/`, `src-api-key/`, `src-oauth/`) that weren't chosen
-- `cli/`, `package.json`, `tsconfig.json` — CLI scaffolding tools, not part of your server
-- `.env.example` — once your `.env` is set up (optional, some teams keep this for onboarding)
-
-**Files to clean up:**
-- `src/tools.py` — remove `ExampleResult` and `example_tool`; only your real tools should remain
-- `src/client.py` — update to call your actual tools with real arguments, or remove if not needed
-- `src/main.py` — remove the placeholder inline comments (e.g. `# A short identifier for this connection...`) once the values are filled in
-- `README.md` — replace the template guide with project-specific documentation (see step 7)
-- `pyproject.toml` — update the project `name` and `description` to match your server
-
-### 9. Deploy to Dedalus Labs
-
-Upload your server to [dedaluslabs.ai](https://dedaluslabs.ai). DAuth handles credential security automatically in production.
-
-**Important for OAuth servers:** Make sure all `OAUTH_*` environment variables are configured in the deployment environment. These variables are consumed by the Dedalus platform to handle the OAuth flow — they must be baked into the server at deploy time.
+You: What meetings did I have this week?
+Assistant: ...
+```
 
 ---
 
-## Making Authenticated API Calls with `ctx.dispatch()`
+## Environment Variables
 
-For API Key and OAuth servers, use `ctx.dispatch()` to make authenticated requests through DAuth. The framework applies the credential inside the enclave so your code never touches raw secrets.
+| Variable | Description |
+| --- | --- |
+| `GRANOLA_API_KEY` | Your Granola API key (`grn_*`). Get from Granola desktop app → Settings → API. |
+| `DEDALUS_API_KEY` | Your Dedalus API key (`dsk_*`) |
+| `DEDALUS_API_URL` | API base URL (default: `https://api.dedaluslabs.ai`) |
+| `DEDALUS_AS_URL` | Authorization server URL (default: `https://as.dedaluslabs.ai`) |
+| `GRANOLA_MCP_SLUG` | Your deployed server slug (e.g. `nickyhec/granola-mcp`) |
 
-```python
-from dedalus_mcp import tool, get_context, HttpMethod, HttpRequest
-from src.main import platform_connection
+---
 
-@tool(description="Fetch user profile")
-async def get_profile() -> dict:
-    ctx = get_context()
-    req = HttpRequest(method=HttpMethod.GET, path="/user/profile")
-    resp = await ctx.dispatch(platform_connection, req)
-    if resp.success and resp.response is not None:
-        return {"success": True, "data": resp.response.body}
-    error = resp.error.message if resp.error else "Request failed"
-    return {"success": False, "error": error}
+## Running the Server Locally
+
+```bash
+uv run src/main.py
 ```
 
-The `path` is appended to the `base_url` configured in your `Connection` object. DAuth attaches the credential to the request using the `auth_header_format` you specified.
+This starts the MCP server on port 8080. The `_client.py` connects through
+Dedalus (not localhost). Use this for local testing with a direct MCP client.
 
 ---
 
-## Environment Variables Reference
+## Lint & Typecheck
 
-| Variable | Auth Framework | Description |
-|----------|----------------|-------------|
-| `DEDALUS_AS_URL` | API Key, OAuth | Dedalus authorization server URL (default: `https://as.dedaluslabs.ai`) |
-| `DEDALUS_API_KEY` | API Key, OAuth | Your Dedalus platform API key |
-| `DEDALUS_API_URL` | API Key, OAuth | Dedalus API URL (default: `https://api.dedaluslabs.ai`) |
-| `API_TOKEN` | API Key | The platform credential (rename to match your platform, e.g. `GITHUB_TOKEN`) |
-| `OAUTH_ENABLED` | OAuth | Set to `true` to enable OAuth flow |
-| `OAUTH_AUTHORIZE_URL` | OAuth | Platform's OAuth authorization endpoint |
-| `OAUTH_TOKEN_URL` | OAuth | Platform's OAuth token exchange endpoint |
-| `OAUTH_CLIENT_ID` | OAuth | Your OAuth app's client ID |
-| `OAUTH_CLIENT_SECRET` | OAuth | Your OAuth app's client secret |
-| `OAUTH_SCOPES_AVAILABLE` | OAuth | Comma-separated list of OAuth scopes |
-| `OAUTH_BASE_URL` | OAuth | Platform's API base URL for OAuth requests |
-
-See `.env.example` for a copy-paste-ready version with sections marked by framework.
+```bash
+uv run --group lint ruff format src/
+uv run --group lint ruff check src/ --fix
+uv run --group lint ty check src/
+```
 
 ---
 
-## Requirements
+## Available Tools
 
-- **Python >= 3.10** — for the MCP server
-- **Node.js >= 18** — only needed if using the CLI (`npx create-dmcp`)
-- **uv** (recommended) or **pip** — for Python dependency management
+| Tool | Description |
+| --- | --- |
+| `granola_list_notes` | List note summaries with optional date filters and pagination |
+| `granola_get_note` | Get a full note by ID (owner, attendees, calendar event, summary) |
+| `granola_get_note_with_transcript` | Get a full note including its meeting transcript |
+| `granola_get_recent_notes` | Fetch notes from a recent time window (day, week, or month) |
+| `granola_search_notes_by_date` | Filter notes by creation or update date ranges |
+| `granola_list_notes_paginated` | Auto-paginate through all matching notes |
+| `granola_get_meeting_summary` | Get meeting metadata plus summary text for concise responses |
+| `granola_get_transcript_text` | Get normalized transcript entries (speaker, text, timestamps) |
 
-## Links
+All tools are **read-only** — this server does not modify any data in Granola.
 
-- [Dedalus MCP docs](https://docs.dedaluslabs.ai/dmcp)
-- [DAuth launch blog post](https://www.dedaluslabs.ai/blog/dedalus-auth-launch)
-- [Dashboard & deployment](https://dedaluslabs.ai/dashboard)
+### Tool Details
+
+#### `granola_list_notes`
+
+List note summaries with optional date filtering and cursor-based pagination.
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `created_before` | `str \| None` | `None` | ISO 8601 datetime upper bound |
+| `created_after` | `str \| None` | `None` | ISO 8601 datetime lower bound |
+| `updated_after` | `str \| None` | `None` | Only notes updated after this time |
+| `cursor` | `str \| None` | `None` | Pagination cursor from previous response |
+| `page_size` | `int` | `25` | Notes per page |
+
+#### `granola_get_note`
+
+Fetch a complete note by ID, including owner info, calendar event, attendees, and AI summary.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `note_id` | `str` | Note ID (e.g. `not_1d3tmYTlCICgjy`) |
+
+#### `granola_get_note_with_transcript`
+
+Same as `granola_get_note` but also includes the full meeting transcript.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `note_id` | `str` | Note ID (e.g. `not_1d3tmYTlCICgjy`) |
+
+#### `granola_get_recent_notes`
+
+Convenience wrapper that fetches notes from a relative time window.
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `window` | `str` | `"week"` | Time window: `"day"`, `"week"`, or `"month"` |
+| `page_size` | `int` | `25` | Notes per page |
+
+#### `granola_search_notes_by_date`
+
+Filter notes by specific date ranges. At least one date filter is required.
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `created_after` | `str \| None` | `None` | ISO 8601 datetime lower bound |
+| `created_before` | `str \| None` | `None` | ISO 8601 datetime upper bound |
+| `updated_after` | `str \| None` | `None` | Only notes updated after this time |
+| `page_size` | `int` | `25` | Notes per page |
+
+#### `granola_list_notes_paginated`
+
+Automatically follows cursor pagination to retrieve multiple pages of notes.
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `created_after` | `str \| None` | `None` | ISO 8601 datetime lower bound |
+| `created_before` | `str \| None` | `None` | ISO 8601 datetime upper bound |
+| `updated_after` | `str \| None` | `None` | Only notes updated after this time |
+| `max_pages` | `int` | `10` | Maximum pages to fetch |
+| `page_size` | `int` | `25` | Notes per page |
+
+#### `granola_get_meeting_summary`
+
+Returns just the meeting metadata and summary fields — no transcript or heavy content.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `note_id` | `str` | Note ID (e.g. `not_1d3tmYTlCICgjy`) |
+
+#### `granola_get_transcript_text`
+
+Returns normalized transcript entries with speaker identification.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `note_id` | `str` | Note ID (e.g. `not_1d3tmYTlCICgjy`) |
+
+---
+
+## Architecture
+
+Granola provides a REST API at `https://public-api.granola.ai`. The request
+layer dispatches calls through the Dedalus HTTP enclave, which injects API
+Key credentials transparently.
+
+```
+src/
+├── granola/
+│   ├── config.py      # Connection definition (API Key / Bearer token)
+│   ├── request.py     # REST dispatch + coercion helpers
+│   └── types.py       # Typed dataclass models
+├── tools/
+│   ├── notes.py       # Core note retrieval (list, get, get with transcript)
+│   ├── search.py      # Date filtering + pagination helpers
+│   └── summaries.py   # Summary + transcript extraction
+├── server.py          # MCPServer setup
+├── main.py            # Server entry point
+└── _client.py         # Interactive agent client (DAuth)
+```
+
+---
+
+## Rate Limits
+
+Granola enforces the following rate limits:
+
+- **Burst capacity:** 25 requests
+- **Sustained rate:** 5 requests/second (300/minute)
+
+Rate limits apply per-workspace for Enterprise API keys and per-user for
+Personal API keys. The server does not currently implement automatic retry
+logic — if you hit rate limits, wait and retry.
+
+---
+
+## Troubleshooting
+
+### "Failed to fetch note" / 404 errors
+
+The Granola API only returns notes that have completed AI processing (summary
+and transcript generation). Notes that are still being processed or were never
+summarized will return 404.
+
+### API key not working
+
+- Verify you have a **Business or Enterprise** Granola plan (required for Personal API keys).
+- Check that the key starts with `grn_`.
+- Enterprise admins can disable Personal API key creation — check with your workspace admin.
+
+### Transcript format differences
+
+Transcript format varies by recording platform:
+- **macOS:** Speaker `source` is `"microphone"` (local) or `"speaker"` (remote audio).
+- **iOS:** Speaker `source` is `"microphone"` with optional `diarization_label` for speaker identification (e.g. `"Speaker A"`, `"Speaker B"`).
+
+### "Granola MCP server is currently unavailable"
+
+The client routes through the Dedalus platform by slug. Common causes:
+
+1. **Server not deployed** — deploy from the Dedalus Dashboard first.
+2. **Wrong slug** — verify `GRANOLA_MCP_SLUG` matches your deployment.
+
+---
+
+## Notes
+
+- The API only returns notes with completed AI processing (summary + transcript).
+- Personal API keys give access to notes you own, notes shared with you, and notes in shared private folders.
+- Enterprise API keys give access to all notes in the Team space.
+- Two API key types exist: Personal (user-scoped) and Enterprise (workspace-scoped).
+- API keys appear to be long-lived with no expiry.
+- All tools are read-only — this server does not create or modify notes.
+- Authentication uses API Key (Bearer token) via DAuth. The raw key is never exposed to the server.
