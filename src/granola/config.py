@@ -17,7 +17,7 @@ from dedalus_mcp.auth import Connection, SecretKeys
 
 
 granola = Connection(
-    name="granola",
+    name="granola-mcp",
     secrets=SecretKeys(token="GRANOLA_API_KEY"),  # noqa: S106
     base_url="https://public-api.granola.ai",
     auth_header_format="Bearer {api_key}",
